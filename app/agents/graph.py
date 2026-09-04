@@ -1,17 +1,12 @@
 from langgraph.graph import StateGraph, END
 from app.agents.state import RouteState
-
-def dummy_node(state: RouteState):
-    current_errors = state.get("errors", [])
-    current_errors.append("Dummy node executed")
-
-    return {"errors": current_errors}
+from app.agents.supervisor import supervisor_node
 
 workflow = StateGraph(RouteState)
 
-workflow.add_node("dummy", dummy_node)
+workflow.add_node("supervisor", supervisor_node)
 
-workflow.set_entry_point("dummy")
-workflow.add_edge("dummy", END)
+workflow.set_entry_point("supervisor")
+workflow.add_edge("supervisor", END)
 
 app_graph = workflow.compile()
