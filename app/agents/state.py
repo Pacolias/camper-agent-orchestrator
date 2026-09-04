@@ -9,3 +9,4 @@ class RouteState(TypedDict):
     fuel_cost: float
     final_itinerary: dict
     errors: list[str]
+    next_action: str
