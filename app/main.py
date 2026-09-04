@@ -1,8 +1,9 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
+from app.agents.graph import app_graph
 
 # Configure logging for observability
 logging.basicConfig(level=logging.INFO)
@@ -29,32 +30,31 @@ async def plan_route(payload: RoutePayload):
     logger.info(f"Initiating route calculation from {payload.origin} to {payload.destination} ")
 
     try:
-        # route_dict = route_optimizer.calculate(payload.dict())
 
-        route_dict = {
-            "summary": {
-                "origin": payload.origin,
-                "destination": payload.destination,
-                "max_driving_hours_per_day": 6.5,
-                "service_requirements_met": payload.requires_hookups
-            },
-            "waypoints": [
-                {
-                    "type": "rest_stop",
-                    "location": "Service Area A",
-                    "recommended_durantion_mins": 45
-                },
-                {
-                    "type": "pernoctation",
-                    "location": "Camper Park B",
-                    "amenities": ["water", "electricity"] if payload.requires_hookups else ["parking"]
-                }
-            ],
-            "agent_notes": "Routes optimized for minimum toll usage and scenic coastal views."
+        prefs_str = ", ".join(payload.preferences) if payload.preferences else "None"
+        synthesized_request = (
+            f"Plan a route from {payload.origin} to {payload.destination}. "
+            f"Max {payload.max_driving_hours_per_day}h driving/day. "
+            f"Hookups required: {payload.requires_hookups}. Preferences: {prefs_str}."
+        )
+
+
+        initial_state = {
+            "user_request": synthesized_request,
+            "origin": payload.origin,
+            "destination": payload.destination,
+            "legal_context": "",
+            "poi_data": [],
+            "fuel_cost": 0.0,
+            "final_itinerary": {},
+            "errors": []
         }
 
-        logger.info("Route successfully orchestrated and generated.")
-        return {"status": "success", "data": route_dict}
+
+        final_state = app_graph.invoke(initial_state)
+
+        logger.info("Route successfully orchestrated by LangGraph.")
+        return {"status": "success", "data": final_state}
 
     except ValueError as ve:
         logger.error(f"Value error during route planning: {ve}")
