@@ -25,14 +25,19 @@ llm = ChatGoogleGenerativeAI(
 structured_llm = llm.with_structured_output(SupervisorDecision)
 
 def supervisor_node(state: RouteState):
-    user_request = state.get("user_request", "")
+    state_as_text = str(state)
 
     response = structured_llm.invoke([
         ("system", PROMPT),
-        ("human", user_request)
+        ("human", state_as_text)
     ])
+
+    next_action = response.next_action
+
+    if state.get("poi_data") and next_action == "sql_agent":
+        next_action = "end"
 
     return {
         "final_itinerary": {"draft_route": response.draft_route},
-        "next_action": response.next_action
+        "next_action": next_action
     }
