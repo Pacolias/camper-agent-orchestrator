@@ -12,7 +12,7 @@ flowchart TD
 
     %% Nodos de entrada
     Client([Usuario / Frontend])
-    Endpoint[FastAPI: POST /api/v1/plan-route]:::api
+    Endpoint[FastAPI: POST /api/plan-route]:::api
     
     %% Grafo y Estado
     State[(RouteState: Memoria Compartida)]:::state
