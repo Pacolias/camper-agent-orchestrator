@@ -1,9 +1,14 @@
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
+from typing import Literal
 from pathlib import Path
+
 from app.core.config import settings
 from app.agents.state import RouteState
-from typing import Literal
+
+from app.agents.rag_agent import rag_agent_node
+from app.agents.sql_agent import sql_agent_node
+from app.agents.math_agent import math_agent_node
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 PROMPT_PATH = BASE_DIR / "prompts" / "route.txt"
@@ -25,6 +30,9 @@ llm = ChatGoogleGenerativeAI(
 structured_llm = llm.with_structured_output(SupervisorDecision)
 
 def supervisor_node(state: RouteState):
+    """
+    Evaluates the current state and decides which agent goes next
+    """
     state_as_text = str(state)
 
     response = structured_llm.invoke([
@@ -35,6 +43,10 @@ def supervisor_node(state: RouteState):
     next_action = response.next_action
 
     if state.get("poi_data") and next_action == "sql_agent":
+        next_action = "end"
+    if state.get("legal_context") and next_action == "rag_agent":
+        next_action = "end"
+    if state.get("math_analysis") and next_action == "math_agent":
         next_action = "end"
 
     return {
