@@ -31,6 +31,6 @@ htmlcov/
 Thumbs.db
 
 # Local Vector Database (ChromaDB)
-chroma_data/
+chroma_db/
 *.sqlite3
 *.sqlite3-journal
