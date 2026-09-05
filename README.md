@@ -14,54 +14,54 @@ The orchestration loop relies on a shared `RouteState`. The Supervisor agent eva
 
 ```mermaid
 flowchart TD
-    %% Estilos
+    %% Styles
     classDef api fill:#005571,stroke:#fff,stroke-width:2px,color:#fff;
     classDef agent fill:#8E75B2,stroke:#fff,stroke-width:2px,color:#fff;
     classDef supervisor fill:#FF4F00,stroke:#fff,stroke-width:2px,color:#fff;
     classDef tools fill:#3670A0,stroke:#fff,stroke-width:2px,color:#fff;
     classDef state fill:#4CAF50,stroke:#fff,stroke-width:2px,color:#fff;
 
-    %% Nodos de entrada
-    Client([Usuario / Frontend])
+    %% Entry points
+    Client([User / Frontend])
     Endpoint[FastAPI: POST /api/plan-route]:::api
     
-    %% Grafo y Estado
-    State[(RouteState: Memoria Compartida)]:::state
+    %% Graph and State
+    State[(RouteState: Shared Memory)]:::state
     
-    %% Agentes (Nodos de LangGraph)
+    %% Agents (LangGraph Nodes)
     Supervisor{Supervisor Agent}:::supervisor
     RagAgent[RAG Legal Agent]:::agent
     SqlAgent[SQL POI Agent]:::agent
     MathAgent[Math Optimization Agent]:::agent
     
-    %% Herramientas
-    Chroma[(ChromaDB\nNormativas PDF)]:::tools
-    SQLDB[(SQLite/MySQL\nÁreas Camper)]:::tools
-    SciPy[NumPy/SciPy\nCálculo Desnivel]:::tools
+    %% Tools
+    Chroma[(ChromaDB\nPDF Regulations)]:::tools
+    SQLDB[(SQLite/MySQL\nCamper Areas)]:::tools
+    SciPy[NumPy/SciPy\nElevation Calculation]:::tools
 
-    %% Flujo de ejecución
-    Client -- "Petición en lenguaje natural" --> Endpoint
-    Endpoint -- "Inicializa" --> State
-    State -- "Pasa el estado al punto de entrada" --> Supervisor
+    %% Execution Flow
+    Client -- "Natural language request" --> Endpoint
+    Endpoint -- "Initializes" --> State
+    State -- "Passes state to entry point" --> Supervisor
     
-    %% Enrutamiento Cíclico
-    Supervisor -- "Falta contexto normativo" --> RagAgent
-    Supervisor -- "Faltan áreas/precios" --> SqlAgent
-    Supervisor -- "Falta cálculo de consumo" --> MathAgent
+    %% Cyclic Routing
+    Supervisor -- "Missing legal context" --> RagAgent
+    Supervisor -- "Missing areas/prices" --> SqlAgent
+    Supervisor -- "Missing consumption calculation" --> MathAgent
     
-    %% Uso de herramientas
-    RagAgent -. "Búsqueda Semántica" .-> Chroma
-    SqlAgent -. "Consultas SQL (MCP)" .-> SQLDB
-    MathAgent -. "Algoritmos" .-> SciPy
+    %% Tool usage
+    RagAgent -. "Semantic Search" .-> Chroma
+    SqlAgent -. "SQL Queries (MCP)" .-> SQLDB
+    MathAgent -. "Algorithms" .-> SciPy
     
-    %% Retorno al estado y supervisor (El bucle de LangGraph)
-    RagAgent -- "Actualiza RouteState" --> Supervisor
-    SqlAgent -- "Actualiza RouteState" --> Supervisor
-    MathAgent -- "Actualiza RouteState" --> Supervisor
+    %% Return to state and supervisor (LangGraph loop)
+    RagAgent -- "Updates RouteState" --> Supervisor
+    SqlAgent -- "Updates RouteState" --> Supervisor
+    MathAgent -- "Updates RouteState" --> Supervisor
     
-    %% Salida
-    Supervisor -- "Estado completo" --> Final[Genera JSON Estructurado]
-    Final -- "Devuelve 200 OK" --> Endpoint
+    %% Output
+    Supervisor -- "Complete state" --> Final[Generates Structured JSON]
+    Final -- "Returns 200 OK" --> Endpoint
     Endpoint --> Client
 ```
 
