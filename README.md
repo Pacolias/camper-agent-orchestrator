@@ -65,7 +65,7 @@ flowchart TD
     Endpoint --> Client
 ```
 
-##Core Components
+## Core Components
 
 - **Supervisor Agent**: The central decision-maker. It relies on a deterministic prompt and Pydantic structured outputs to evaluate the RouteState missing fields and trigger conditional routing.
 
