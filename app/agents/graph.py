@@ -6,7 +6,10 @@ from app.agents.rag_agent import rag_agent_node
 from app.agents.math_agent import math_agent_node
 
 def router(state: RouteState):
-    return state.get("next_action", "end")
+    action = state.get("next_action", "end")
+    if action == "end":
+        return END
+    return action
 
 workflow = StateGraph(RouteState)
 
@@ -24,7 +27,7 @@ workflow.add_conditional_edges(
         "sql_agent": "sql_agent",
         "rag_agent": "rag_agent",
         "math_agent": "math_agent",
-        "end": END
+        END: END
     }
 )
 
