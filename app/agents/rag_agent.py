@@ -18,7 +18,7 @@ def rag_agent_node(state: RouteState):
         )
 
         docs = vector_store.similarity_search(
-            f"Motorhome and campervan pernoctation normative in {destination}"
+            f"Motorhome and campervan pernoctation normative in {destination}",
             k=3
         )
 
