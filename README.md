@@ -75,32 +75,22 @@ flowchart TD
 
 - **Math Agent**: Handles numerical processing for fuel cost estimations and driving time optimizations based on distance and vehicle consumption.
 
-## Local Setup
+## Setup & Deployment
 
 1. Clone the repository and navigate to the project root.
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate
-
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-
-```
-
-4. Set up environment variables. Create a `.env` file in the root directory:
+2. Create a `.env` file in the root directory to store your credentials:
 ```env
 GEMINI_API_KEY=your_api_key_here
-
 ```
 
-5. Run the development server:
+3. Build the Docker image:
 ```bash
-python -m uvicorn app.main:app --reload
+docker build -t camper-agent-orchestrator .
+```
 
+4. Run the container:
+```bash
+docker run -d --name camper-api -p 8000:8000 --env-file .env camper-agent-orchestrator
 ```
 
 ## Usage
