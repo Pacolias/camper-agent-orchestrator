@@ -2,6 +2,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from langchain_core.exceptions import ModelRateLimitError, ModelAPIError
 
 from app.agents.graph import app_graph
 
@@ -43,6 +44,8 @@ async def plan_route(payload: RoutePayload):
             "user_request": synthesized_request,
             "origin": payload.origin,
             "destination": payload.destination,
+            "max_driving_hours_per_day": payload.max_driving_hours_per_day,
+            "requires_hookups": payload.requires_hookups,
             "legal_context": "",
             "poi_data": [],
             "fuel_cost": 0.0,
@@ -59,6 +62,12 @@ async def plan_route(payload: RoutePayload):
     except ValueError as ve:
         logger.error(f"Value error during route planning: {ve}")
         raise HTTPException(status_code=422, detail=str(ve))
+    except ModelRateLimitError as e:
+        logger.error(f"Gemini API rate limit exceeded: {e}")
+        raise HTTPException(status_code=429, detail="Gemini API rate limit exceeded. Please retry shortly.")
+    except ModelAPIError as e:
+        logger.error(f"Gemini API server-side failure: {e}")
+        raise HTTPException(status_code=503, detail="Gemini API is temporarily unavailable. Please retry shortly.")
     except Exception as e:
         logger.error(f"Validation error during route planning: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error while planning the route.")
