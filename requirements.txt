@@ -10,3 +10,4 @@ chromadb==1.5.9
 
 # Environment & Utilities
 python-dotenv==1.2.3
+requests==2.34.2
