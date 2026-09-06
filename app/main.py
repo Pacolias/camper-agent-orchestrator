@@ -50,7 +50,9 @@ async def plan_route(payload: RoutePayload):
             "poi_data": [],
             "fuel_cost": 0.0,
             "final_itinerary": {},
-            "errors": []
+            "errors": [],
+            "final_destination": None,
+            "itinerary_legs": []
         }
 
 
