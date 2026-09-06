@@ -14,11 +14,21 @@ FUEL_PRICE_EUR_PER_L = 1.65    # approximate diesel price (EUR)
 
 FALLBACK_AVG_SPEED_KMH = 90.0
 
+# This app only plans routes in Spain/Portugal (see the seeded POI DB and the
+# Spanish legal PDF). Ambiguous single-word place names (e.g. "Sagres" is
+# also a town in Brazil) can otherwise resolve to the wrong continent with a
+# plausible-looking pair of coordinates — bounding the search to Iberia
+# disambiguates deterministically instead of trusting Nominatim's raw ranking.
+IBERIA_VIEWBOX = "-9.6,44.0,3.5,35.9"
+
 
 def _geocode(place: str) -> tuple[float, float]:
     response = requests.get(
         NOMINATIM_URL,
-        params={"q": place, "format": "json", "limit": 1},
+        params={
+            "q": place, "format": "json", "limit": 1,
+            "viewbox": IBERIA_VIEWBOX, "bounded": 1
+        },
         headers={"User-Agent": USER_AGENT},
         timeout=REQUEST_TIMEOUT
     )
