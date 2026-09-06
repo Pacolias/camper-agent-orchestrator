@@ -13,3 +13,5 @@ class RouteState(TypedDict):
     final_itinerary: dict
     errors: list[str]
     next_action: str
+    final_destination: str | None
+    itinerary_legs: list[dict]
