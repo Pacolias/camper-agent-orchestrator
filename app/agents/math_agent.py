@@ -27,4 +27,4 @@ def math_agent_node(state: RouteState):
         "feasible_within_daily_limit": bool(is_feasible)
     }
     
-    return {"math_analysis": math_analysis}
+    return {"math_analysis": math_analysis, "fuel_cost": math_analysis["estimated_fuel_cost_eur"]}
