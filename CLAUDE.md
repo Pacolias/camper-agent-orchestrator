@@ -30,6 +30,13 @@ python scripts/ingest.py
 
 ```
 
+Seed the POI SQLite DB (must be run before the SQL agent has real data to query — otherwise it silently falls back to mock data):
+
+```bash
+python scripts/seed_poi_db.py
+
+```
+
 Docker:
 
 ```bash
@@ -47,7 +54,9 @@ curl -X POST "http://localhost:8000/api/route" \
 
 ```
 
-`requirements.txt` is still stale relative to what's actually imported/used (missing `langgraph`, `langchain-core`, `langchain-community`, `langchain-chroma`, `langchain-huggingface`, `langchain-text-splitters`, `numpy`). A fresh `pip install -r requirements.txt` will not be sufficient to run the app — check the venv or add the missing packages if setting up a new environment.
+`requirements.txt` is still stale relative to what's actually imported/used (missing `langgraph`, `langchain-core`, `langchain-community`, `langchain-chroma`, `langchain-huggingface`, `langchain-text-splitters`). A fresh `pip install -r requirements.txt` will not be sufficient to run the app — check the venv or add the missing packages if setting up a new environment.
+
+`math_agent_node` calls two free, keyless public APIs over the network (Nominatim for geocoding, the public OSRM demo server for routing) — running the app fully offline exercises its fallback path (randomized distance), not the real calculation.
 
 ## Architecture
 
@@ -82,8 +91,8 @@ Every spoke agent returns to `supervisor`, never to each other and never to `END
 Each is a plain function `(state: RouteState) -> dict` (LangGraph node signature), independent of the others:
 
 * **`rag_agent_node`**: Semantic search over a persisted Chroma DB at `./chroma_db` (built by `scripts/ingest.py` from `data/ley_costas_y_pernocta.pdf`) using `HuggingFaceEmbeddings("all-MiniLM-L6-v2")`. On any exception it silently falls back to a hardcoded legal-context string.
-* **`sql_agent_node`**: Real SQLite querying is commented out; it currently returns **hardcoded mock POI data**, correctly filtered by `state["requires_hookups"]`. Treat POI results as fake until the SQL path is wired back up.
-* **`math_agent_node`**: Computes fuel cost / driving time from a **randomized distance** (`np.random.uniform(150, 400)`), not an actual route distance. Returns both `math_analysis` (full breakdown) and `fuel_cost` (the scalar the prompt's routing rule and the supervisor's guard clause both key off of) — keep both in sync if you touch this node.
+* **`sql_agent_node`**: Queries a real SQLite DB at `data/campers_poi.db` (seeded by `scripts/seed_poi_db.py`, gitignored — run the script once after cloning) via a read-only URI connection (`file:...?mode=ro`, so a missing DB fails loudly instead of sqlite3 silently creating an empty one). Falls back to hardcoded mock POI data **only on an actual query failure** (missing/corrupt DB) — a real query that legitimately finds zero matches for a destination returns an empty list, it does not trigger the mock.
+* **`math_agent_node`**: Geocodes `origin`/`destination` via Nominatim (OpenStreetMap) and gets a real driving distance + duration from the public OSRM demo server, then derives fuel cost from `CONSUMPTION_L_PER_100KM`/`FUEL_PRICE_EUR_PER_L` (documented constants, not fetched live). Falls back to a randomized distance (`random.uniform(150, 400)` at an assumed 90 km/h) only if geocoding/routing genuinely fails (place not found, no route, network/service error) — same fallback-on-failure-only convention as `sql_agent_node`. Both APIs are free public instances with no key: Nominatim has a strict usage policy (identify via `User-Agent`, ~1 req/s) and the OSRM demo server is not meant for production load — fine for this project's traffic, but don't assume high throughput. Returns both `math_analysis` (full breakdown) and `fuel_cost` (the scalar the prompt's routing rule and the supervisor's guard clause both key off of) — keep both in sync if you touch this node.
 
 ### Config (`app/core/config.py`)
 
