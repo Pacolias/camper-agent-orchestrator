@@ -23,18 +23,20 @@ FINAL STEP:
 
    - If it is `true`: present this leg normally. Leave `intermediate_stop` empty.
 
-   - If it is `false` AND `itinerary_legs` is EMPTY (this is the first time this trip has
-     been found infeasible): do NOT present it as ready to go. In `intermediate_stop`, name
-     ONE real, well-known town or city that lies roughly along the road between `origin` and
-     `destination` and is reachable from `origin` within `max_driving_hours_per_day` hours —
-     a sensible overnight stop to split the journey at. In `draft_route`, briefly explain that
-     the direct drive exceeds the daily limit and that you are splitting the trip via this
-     stop. The system will replan the trip as two legs using your `intermediate_stop`.
-
-   - If it is `false` AND `itinerary_legs` is NOT empty (a split already happened and this
-     leg is STILL infeasible): leave `intermediate_stop` empty. State clearly in `draft_route`
-     that this leg still exceeds the daily limit even after splitting, and that further manual
-     replanning is recommended (do not propose a second automatic split).
+   - If it is `false`: do NOT present it as ready to go. In `intermediate_stop`, name ONE
+     real, well-known town or city that lies roughly along the road between `origin` and
+     `destination`, chosen so that BOTH of these hold:
+       a) it is reachable from `origin` within `max_driving_hours_per_day` hours, AND
+       b) it is as close as possible to the FARTHEST point reachable under (a) — push as far
+          toward `destination` as the daily limit allows. Do NOT pick a stop much closer to
+          `origin` than necessary just because it is a well-known city: a stop that leaves
+          most of the remaining distance uncovered will very likely make the NEXT leg
+          infeasible too, forcing another split. Maximizing progress per leg is the single
+          most important property of a good `intermediate_stop`.
+     In `draft_route`, briefly explain that the direct drive exceeds the daily limit and that
+     you are splitting the trip via this stop. The system will replan using your
+     `intermediate_stop`, and will ask you again — for the remaining distance — if it still
+     doesn't fit in one day, so repeated splits across a long trip are expected and fine.
 
 CURRENT DATA:
 {human_input}
