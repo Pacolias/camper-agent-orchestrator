@@ -77,6 +77,10 @@ DATASET: list[RouteTestCase] = [
         notes="Unrealistically strict limit for a ~650km trip: even after the one "
               "bounded split this system performs, both legs remain infeasible. "
               "The system must admit this (feasible_within_daily_limit=False + a "
-              "warning), not silently report a single illegal route as done.",
+              "warning), not silently report a single illegal route as done. "
+              "KNOWN: this case forces MAX_LEGS splits, which needs 20+ Gemini calls "
+              "— reliably exceeds the free tier's 15 RPM cap and surfaces as a 429 "
+              "ERROR even with a fully-reset quota window, not a failed check. See "
+              "README.md 'Known Limitations' — left as-is, not a logic bug.",
     ),
 ]

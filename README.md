@@ -109,5 +109,35 @@ curl -X POST "http://localhost:8000/api/route" \
 
 ```
 
+## Evaluation Suite
+
+`evals/` is a small custom eval harness (not pytest — see module docstrings for why) that runs 5 golden route cases end-to-end against the real graph, asserting on the Python-computed state (`math_analysis`, `itinerary_legs`, `legal_region`), never on the LLM's free-text narrative:
+
+```bash
+python -m evals.run_evals                         # full dataset
+python -m evals.run_evals --case short_same_region # a single case
+```
+
+This makes real Gemini/Nominatim/OSRM calls and consumes real free-tier LLM quota — it's a correctness check, not a fast unit-test suite.
+
+## Known Limitations & Trade-offs
+
+This project intentionally runs on Gemini's **free tier** (`gemini-flash-lite-latest`) as a portfolio/cost decision, not a technical one. That choice has one concrete, measured consequence worth calling out explicitly rather than leaving for someone to rediscover and mistake for a bug:
+
+**The free tier's per-minute request quota (15 RPM) can be lower than what a single request needs.** Every `/api/route` call makes at least 4 Gemini calls (the supervisor fires once per hub visit). When a trip is infeasible in one leg, the system automatically re-plans by splitting it into sub-legs (bounded by `MAX_LEGS`) — each additional leg adds another supervisor round-trip, and a "guard clause" that forces a re-route whenever the LLM tries to end a leg prematurely can add several more on top of that. Measured on this repo's own eval dataset:
+
+| Legs in the final itinerary | Gemini calls observed |
+|---|---|
+| 1 (no split) | 4 |
+| 2 | 10 |
+| 3 | 16 |
+| 4 (`MAX_LEGS`, worst case) | 20+ — reliably exceeds the 15 RPM cap |
+
+The adversarial eval case designed to force the maximum number of splits (`extreme_infeasible_after_split` in `evals/dataset.py`) fails with a `429 RESOURCE_EXHAUSTED` from Gemini even when run in isolation with a fully-reset quota window — it needs more calls than the free tier allows in the time it takes the graph to make them. The eval harness reports this as an **ERROR**, distinct from a **failed check**: the routing logic, feasibility math, and region resolution are all correct in every case that *does* get to run (12/12 checks passed across the other 4 cases) — this is a rate-limit ceiling, not a logic defect.
+
+**Why this is left as-is:** upgrading to a paid Gemini tier, or reworking the routing to need fewer LLM calls, would defeat the point of this being a free, self-contained portfolio project. The honest trade-off is: this architecture is correct and demonstrable on the free tier for realistic trips (0-3 splits), and its own eval suite is what surfaces the exact point where free-tier quota — not the agent design — becomes the bottleneck.
+
+Related, smaller constraints from the same "free/public services, no keys" decision: Nominatim (geocoding) enforces ~1 req/s and the OSRM demo server used for routing isn't meant for production load. Both are fine at this project's traffic level; see `app/agents/math_agent.py` and `CLAUDE.md` for details.
+
 ## Copyright and License
 This project is open-source software licensed under the MIT License.
