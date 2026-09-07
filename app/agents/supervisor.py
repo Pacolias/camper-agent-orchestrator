@@ -27,7 +27,9 @@ class SupervisorDecision(BaseModel):
         default=None,
         description=(
             "A real town/city to split the current leg at, when it is not feasible within "
-            "max_driving_hours_per_day. Only set the first time a leg is found infeasible."
+            "max_driving_hours_per_day. Set it every time the current leg is infeasible, "
+            "even if a previous leg was already split — pick the farthest reachable point, "
+            "not just any reachable point, to minimize how many splits are needed."
         )
     )
 
@@ -98,6 +100,7 @@ def supervisor_node(state: RouteState):
     is_feasible = math_analysis.get("feasible_within_daily_limit", True)
     itinerary_legs = list(state.get("itinerary_legs") or [])
     final_destination = state.get("final_destination")
+    split_count = state.get("split_count", 0)
 
     if next_action != "end":
         return {"next_action": next_action}
@@ -115,27 +118,56 @@ def supervisor_node(state: RouteState):
             "math_analysis": math_analysis
         }
 
-    # Case 1: current leg is infeasible and we haven't split the trip yet — replan as
-    # two legs instead of ending. Reuses sql/rag/math unchanged by repointing
-    # origin/destination at the sub-leg and clearing the per-leg data so the routing
-    # rules above naturally re-trigger sql_agent -> rag_agent -> math_agent for it.
-    # Bounded to exactly one split (guarded by `not final_destination`) so a leg that
-    # is STILL infeasible after splitting cannot trigger a second, unbounded split.
-    if not is_feasible and not final_destination and response.intermediate_stop:
+    # Bounds how many times a single request can split. Not "exactly one
+    # split": a route can need a second split if the LLM's chosen
+    # intermediate_stop was a poor midpoint and the REMAINING leg is still
+    # infeasible (observed directly: Barcelona->Málaga split via Valencia
+    # left a 6.82h Valencia->Málaga leg against a 6h limit — the prompt only
+    # required the stop be reachable FROM origin, never that the remainder
+    # also fit). Bounding by leg count (not "has this leg been split
+    # before") is what lets the same infeasible-leg check apply uniformly
+    # whether this is the very first attempt or a leg produced by an earlier
+    # split, without special-casing "first split" vs "second split".
+    #
+    # Bounded by `split_count`, NOT `len(itinerary_legs)`: a leg only gets
+    # appended to itinerary_legs once it's finished and we move past it, but
+    # if the LLM keeps proposing an intermediate_stop that's ALSO infeasible,
+    # we re-split the same not-yet-finished leg over and over — itinerary_legs
+    # never grows in that scenario, so bounding on its length would never
+    # trigger and this would loop forever (caught by testing before this
+    # ever ran against the real API).
+    MAX_LEGS = 4
+
+    # Is the CURRENT leg the one that reaches the user's real final
+    # destination? True both for a trip that was never split (final_destination
+    # is None) and for whichever leg's destination equals it once set.
+    is_final_leg = not final_destination or state.get("destination") == final_destination
+
+    # Split (or re-split) this leg: applies equally to the original whole-trip
+    # attempt and to any leg produced by a previous split. Reuses sql/rag/math
+    # unchanged by repointing `destination` at the sub-leg and clearing the
+    # per-leg data so the routing rules above naturally re-trigger
+    # sql_agent -> rag_agent -> math_agent for it. `origin` is left as-is —
+    # we're shortening THIS leg's far end, not moving its start.
+    if not is_feasible and split_count < MAX_LEGS - 1 and response.intermediate_stop:
         return {
-            "final_destination": state.get("destination"),
+            "final_destination": final_destination or state.get("destination"),
             "destination": response.intermediate_stop,
             "poi_data": [],
             "legal_context": "",
             "legal_region": None,
             "fuel_cost": 0.0,
             "math_analysis": {},
+            "split_count": split_count + 1,
             "next_action": "sql_agent"
         }
 
-    # Case 2: the first leg (origin -> intermediate stop) just finished — record it
-    # and start the second leg (intermediate stop -> the real final destination).
-    if final_destination and state.get("destination") != final_destination:
+    # This leg reached an intermediate stop, not the real final destination —
+    # record it and continue from there toward final_destination. Whether
+    # THIS leg turned out feasible or we simply ran out of split budget for
+    # it (handled by the aggregate feasibility check below), we always move
+    # on rather than looping on the same leg forever.
+    if not is_final_leg:
         itinerary_legs.append(_leg_summary())
         return {
             "itinerary_legs": itinerary_legs,
@@ -149,47 +181,50 @@ def supervisor_node(state: RouteState):
             "next_action": "sql_agent"
         }
 
-    # Case 3: the second leg just finished — assemble the combined multi-day itinerary.
-    if final_destination and state.get("destination") == final_destination:
-        itinerary_legs.append(_leg_summary())
-        total_fuel_cost = sum(
-            leg["math_analysis"].get("estimated_fuel_cost_eur", 0.0) for leg in itinerary_legs
-        )
-        all_feasible = all(
-            leg["math_analysis"].get("feasible_within_daily_limit", True) for leg in itinerary_legs
-        )
+    # This leg reaches the real final destination and is either feasible, or
+    # we've exhausted the split budget and must report honestly instead of
+    # looping forever.
+    if final_destination is None:
+        # Never split at all — plain single-leg result.
         final_itinerary = {
             "draft_route": response.draft_route,
-            "feasible_within_daily_limit": all_feasible,
-            "legs": itinerary_legs,
-            "legal_context_by_region": state.get("legal_context_by_region") or {},
-            "total_fuel_cost_eur": round(total_fuel_cost, 2)
+            "feasible_within_daily_limit": is_feasible
         }
-        if not all_feasible:
+        if not is_feasible:
             final_itinerary["warning"] = (
-                "One or more legs still exceed max_driving_hours_per_day even after "
-                "splitting the route once; manual replanning is recommended."
+                f"Estimated driving time ({math_analysis.get('driving_time_hours')}h) exceeds "
+                f"max_driving_hours_per_day ({state.get('max_driving_hours_per_day')}h) and no "
+                "further automatic split was made. Manual replanning is recommended."
             )
         return {
-            "itinerary_legs": itinerary_legs,
             "final_itinerary": final_itinerary,
             "next_action": "end"
         }
 
-    # Case 4: normal single-leg completion (feasible), or infeasible with no split
-    # available (already split once, or the LLM didn't propose an intermediate_stop).
+    # Multi-leg trip: assemble the combined itinerary from every leg recorded
+    # along the way.
+    itinerary_legs.append(_leg_summary())
+    total_fuel_cost = sum(
+        leg["math_analysis"].get("estimated_fuel_cost_eur", 0.0) for leg in itinerary_legs
+    )
+    all_feasible = all(
+        leg["math_analysis"].get("feasible_within_daily_limit", True) for leg in itinerary_legs
+    )
     final_itinerary = {
         "draft_route": response.draft_route,
-        "feasible_within_daily_limit": is_feasible
+        "feasible_within_daily_limit": all_feasible,
+        "legs": itinerary_legs,
+        "legal_context_by_region": state.get("legal_context_by_region") or {},
+        "total_fuel_cost_eur": round(total_fuel_cost, 2)
     }
-    if not is_feasible:
+    if not all_feasible:
         final_itinerary["warning"] = (
-            f"Estimated driving time ({math_analysis.get('driving_time_hours')}h) exceeds "
-            f"max_driving_hours_per_day ({state.get('max_driving_hours_per_day')}h) and no "
-            "further automatic split was made. Manual replanning is recommended."
+            f"One or more legs still exceed max_driving_hours_per_day even after "
+            f"splitting into {len(itinerary_legs)} legs (limit: {MAX_LEGS} legs per "
+            "request); manual replanning is recommended."
         )
-
     return {
+        "itinerary_legs": itinerary_legs,
         "final_itinerary": final_itinerary,
         "next_action": "end"
     }
