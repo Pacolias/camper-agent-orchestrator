@@ -7,6 +7,8 @@ class RouteState(TypedDict):
     max_driving_hours_per_day: int
     requires_hookups: bool
     legal_context: str
+    legal_region: str | None
+    legal_context_by_region: dict[str, str]
     poi_data: list[dict]
     fuel_cost: float
     math_analysis: dict
