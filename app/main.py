@@ -54,7 +54,8 @@ async def plan_route(payload: RoutePayload):
             "final_itinerary": {},
             "errors": [],
             "final_destination": None,
-            "itinerary_legs": []
+            "itinerary_legs": [],
+            "split_count": 0
         }
 
 
