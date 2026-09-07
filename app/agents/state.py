@@ -17,3 +17,4 @@ class RouteState(TypedDict):
     next_action: str
     final_destination: str | None
     itinerary_legs: list[dict]
+    split_count: int
