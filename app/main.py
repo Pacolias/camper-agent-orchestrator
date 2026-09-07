@@ -47,6 +47,8 @@ async def plan_route(payload: RoutePayload):
             "max_driving_hours_per_day": payload.max_driving_hours_per_day,
             "requires_hookups": payload.requires_hookups,
             "legal_context": "",
+            "legal_region": None,
+            "legal_context_by_region": {},
             "poi_data": [],
             "fuel_cost": 0.0,
             "final_itinerary": {},
