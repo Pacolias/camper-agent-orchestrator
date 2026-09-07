@@ -1,3 +1,4 @@
+import logging
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import Literal
@@ -5,6 +6,8 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.agents.state import RouteState
+
+logger = logging.getLogger(__name__)
 
 from app.agents.rag_agent import rag_agent_node
 from app.agents.sql_agent import sql_agent_node
@@ -50,12 +53,42 @@ def supervisor_node(state: RouteState):
 
     next_action = response.next_action
 
+    logger.debug(
+        "supervisor_node: leg=%s->%s llm_next_action=%r poi_data=%s legal_context=%s "
+        "fuel_cost=%s intermediate_stop=%r",
+        state.get("origin"), state.get("destination"), next_action,
+        bool(state.get("poi_data")), bool(state.get("legal_context")),
+        state.get("fuel_cost"), response.intermediate_stop
+    )
+
     if state.get("poi_data") and next_action == "sql_agent":
         next_action = "end"
     if state.get("legal_context") and next_action == "rag_agent":
         next_action = "end"
     if state.get("fuel_cost") and next_action == "math_agent":
         next_action = "end"
+
+    # Hard invariant, enforced in Python: never let the LLM terminate a leg
+    # with a required field still missing. The three guards above only stop
+    # it from RE-visiting an already-satisfied step; nothing stopped it from
+    # jumping straight to "end" while a step was never visited at all. This
+    # is exactly what was happening: on multi-leg replans the state payload
+    # sent to the model is larger (final_destination, itinerary_legs,
+    # legal_context_by_region), and the model would sometimes emit "end"
+    # for a leg whose legal_context was still "" — rag_agent_node was never
+    # called for that leg, so legal_region stayed None. Same class of bug as
+    # the earlier feasibility-hallucination fix: don't trust the LLM's "end"
+    # signal for a hard invariant, verify it.
+    if next_action == "end":
+        if not state.get("poi_data"):
+            logger.warning("supervisor_node: LLM said 'end' but poi_data is empty — forcing sql_agent")
+            next_action = "sql_agent"
+        elif not state.get("legal_context"):
+            logger.warning("supervisor_node: LLM said 'end' but legal_context is empty — forcing rag_agent")
+            next_action = "rag_agent"
+        elif not state.get("fuel_cost"):
+            logger.warning("supervisor_node: LLM said 'end' but fuel_cost is empty — forcing math_agent")
+            next_action = "math_agent"
 
     # Everything below is a deterministic state machine over the LLM's "end" signal —
     # don't rely on the LLM to track multi-leg bookkeeping across calls (it was already
@@ -70,11 +103,15 @@ def supervisor_node(state: RouteState):
         return {"next_action": next_action}
 
     def _leg_summary():
+        # Reference the region tag, not the full legal_context text — the text
+        # itself lives once in final_itinerary.legal_context_by_region (Case 3).
+        # Repeating a multi-hundred-word block per leg for a trip that revisits
+        # the same region would inflate the response for no reason.
         return {
             "origin": state.get("origin"),
             "destination": state.get("destination"),
             "poi_data": state.get("poi_data"),
-            "legal_context": state.get("legal_context"),
+            "legal_region": state.get("legal_region"),
             "math_analysis": math_analysis
         }
 
@@ -90,6 +127,7 @@ def supervisor_node(state: RouteState):
             "destination": response.intermediate_stop,
             "poi_data": [],
             "legal_context": "",
+            "legal_region": None,
             "fuel_cost": 0.0,
             "math_analysis": {},
             "next_action": "sql_agent"
@@ -105,6 +143,7 @@ def supervisor_node(state: RouteState):
             "destination": final_destination,
             "poi_data": [],
             "legal_context": "",
+            "legal_region": None,
             "fuel_cost": 0.0,
             "math_analysis": {},
             "next_action": "sql_agent"
@@ -123,6 +162,7 @@ def supervisor_node(state: RouteState):
             "draft_route": response.draft_route,
             "feasible_within_daily_limit": all_feasible,
             "legs": itinerary_legs,
+            "legal_context_by_region": state.get("legal_context_by_region") or {},
             "total_fuel_cost_eur": round(total_fuel_cost, 2)
         }
         if not all_feasible:
